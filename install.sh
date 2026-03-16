@@ -39,9 +39,13 @@ install_deps_macos() {
 
 install_scripts_linux() {
     SOURCE_PATH="$(pwd)"
-    DEST_DIR="/usr/local/bin"
+    DEST_DIR="/usr/local/bin/tp-scripts"
+    WRAPPER_DEST="/usr/local/bin"
     declare -A required_scripts=( ["play"]="play.sh" ["playlist"]="playlist.sh" )
     declare -A optional_scripts=( ["playctl"]="playctl.sh" ["terminal-player-mpris"]="terminal_player_mpris.py" )
+
+    echo "Creating $DEST_DIR"
+    sudo install -d "$DEST_DIR"
 
     for cmd in "${!required_scripts[@]}"; do
         SCRIPT="${SOURCE_PATH}/${required_scripts[$cmd]}"
@@ -67,7 +71,14 @@ install_scripts_linux() {
         fi
     done
 
-    echo "Installation complete! You can now run 'play' and 'playlist' from anywhere"
+    if [ -f "${SOURCE_PATH}/tp" ]; then
+        echo "Installing tp wrapper to ${WRAPPER_DEST}/tp"
+        sudo install -m 755 "${SOURCE_PATH}/tp" "${WRAPPER_DEST}/tp"
+    else
+        echo "WARNING: tp wrapper missing (command 'tp' will be unavailable)"
+    fi
+
+    echo "Installation complete! You can now run 'tp play' and 'tp playlist' from anywhere"
 }
 
 

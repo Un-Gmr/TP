@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+if [ $# -lt 1 ]; then
+  echo "Usage: tp <command> [args...]"
+  echo "Example: tp play <song name>"
+  echo "         tp playlist <name>"
+  exit 1
+fi
+
+cmd="$1"
+shift
+exec /usr/local/bin/tp-scripts/"$cmd" "$@"
