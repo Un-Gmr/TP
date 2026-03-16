@@ -1,5 +1,5 @@
 pkgname=tp
-pkgver=1.0
+pkgver=1.1
 pkgrel=1
 pkgdesc=""
 arch=('any')
