@@ -1,4 +1,4 @@
-pkgname=terminal-player
+pkgname=tp
 pkgver=1.0
 pkgrel=1
 pkgdesc=""
