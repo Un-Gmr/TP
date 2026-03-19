@@ -45,7 +45,7 @@ quit=false
 if command -v play >/dev/null 2>&1; then
   PLAY_BIN="play"
 else
-  PLAY_BIN="$(cd "$(dirname "$0")" && pwd)/play.sh"
+  PLAY_BIN="$(cd "$(dirname "$0")" && pwd)/play"
 fi
 
 play_playlist() {

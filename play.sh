@@ -149,6 +149,62 @@ rm -f "$MPV_SOCKET" "$CMD_FILE" "$REASON_FILE" "$MPRIS_STOP_FILE"
 : >"$REASON_FILE"
 : >"$MPRIS_LOG_FILE"
 
+cleanup() {
+  if [ -n "${MPRIS_PID:-}" ]; then
+    : >"$MPRIS_STOP_FILE"
+    kill "$MPRIS_PID" 2>/dev/null || true
+    wait "$MPRIS_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MPRIS_BRIDGE_MODE=""
+MPRIS_BRIDGE_PATH="${MPRIS_BRIDGE:-}"
+if [ "$MPRIS_BRIDGE_PATH" = "tp terminal-player-mpris" ] || [ "$MPRIS_BRIDGE_PATH" = "terminal-player-mpris" ]; then
+  MPRIS_BRIDGE_MODE="tp-wrapper"
+  MPRIS_BRIDGE_PATH=""
+elif [ -n "$MPRIS_BRIDGE_PATH" ]; then
+  MPRIS_BRIDGE_MODE="python-script"
+elif command -v tp >/dev/null 2>&1; then
+  MPRIS_BRIDGE_MODE="tp-wrapper"
+elif [ -f "$SCRIPT_DIR/terminal_player_mpris.py" ]; then
+  MPRIS_BRIDGE_MODE="python-script"
+  MPRIS_BRIDGE_PATH="$SCRIPT_DIR/terminal_player_mpris.py"
+fi
+
+if [ -n "$MPRIS_BRIDGE_MODE" ]; then
+  if [ "$MPRIS_BRIDGE_MODE" = "tp-wrapper" ]; then
+    echo "mpris bridge command: tp terminal-player-mpris" >>"$MPRIS_LOG_FILE"
+  else
+    echo "mpris bridge path: $MPRIS_BRIDGE_PATH" >>"$MPRIS_LOG_FILE"
+  fi
+  MPRIS_PYTHON=""
+  for py in python3 python; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import dbus_next' >/dev/null 2>&1; then
+      MPRIS_PYTHON="$py"
+      break
+    fi
+  done
+
+  if [ -n "$MPRIS_PYTHON" ]; then
+    if [ "$MPRIS_BRIDGE_MODE" = "tp-wrapper" ]; then
+      tp terminal-player-mpris --runtime-dir "$RUNTIME_DIR" >>"$MPRIS_LOG_FILE" 2>&1 &
+    else
+      "$MPRIS_PYTHON" "$MPRIS_BRIDGE_PATH" --runtime-dir "$RUNTIME_DIR" >>"$MPRIS_LOG_FILE" 2>&1 &
+    fi
+    MPRIS_PID=$!
+    sleep 0.2
+    if ! kill -0 "$MPRIS_PID" 2>/dev/null; then
+      echo "MPRIS bridge exited early. See: $MPRIS_LOG_FILE" >&2
+    fi
+  else
+    echo "MPRIS bridge disabled: python with dbus-next not found" >>"$MPRIS_LOG_FILE"
+  fi
+else
+  echo "MPRIS bridge disabled: bridge script not found" >>"$MPRIS_LOG_FILE"
+fi
+
 if [ -f "$METADATA_FILE" ]; then
   TITLE=$(jq -r '.title // "'"$TITLE"'"' "$METADATA_FILE")
   ARTIST=$(jq -r '.artist // empty' "$METADATA_FILE")

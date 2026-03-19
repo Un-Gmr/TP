@@ -2,90 +2,92 @@
 set -e
 
 if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS=$ID
+  . /etc/os-release
+  OS=$ID
 else
-    OS=$(uname -s)
+  OS=$(uname -s)
 fi
 
 echo "Detected OS: $OS"
 
 install_deps_ubuntu_debian() {
-    sudo apt update
-    sudo apt install -y mpv yt-dlp jq curl imagemagick figlet jp2a socat python3 python3-pip
-    pip3 install syncedlyrics dbus-next --break-system-packages
+  sudo apt update
+  sudo apt install -y mpv yt-dlp jq curl imagemagick figlet jp2a socat python3 python3-pip
+  pip3 install syncedlyrics dbus-next --break-system-packages
 }
 
 install_deps_arch() {
-    sudo pacman -Syu --needed mpv yt-dlp jq curl imagemagick figlet jp2a socat python python-pip
-    pip3 install syncedlyrics dbus-next --break-system-packages
+  sudo pacman -Syu --needed mpv yt-dlp jq curl imagemagick figlet jp2a socat python python-pip
+  pip3 install syncedlyrics dbus-next --break-system-packages
 }
 
 install_deps_fedora() {
-    sudo dnf install -y mpv yt-dlp jq curl ImageMagick figlet jp2a socat python3 python3-pip
-    pip3 install syncedlyrics dbus-next --break-system-packages
+  sudo dnf install -y mpv yt-dlp jq curl ImageMagick figlet jp2a socat python3 python3-pip
+  pip3 install syncedlyrics dbus-next --break-system-packages
 }
 
 install_deps_macos() {
-    if ! command -v brew &>/dev/null; then
-        echo "Homebrew not found. Please install: https://brew.sh/"
-        exit 1
-    fi
-    brew update
-    brew install mpv yt-dlp jq curl imagemagick figlet jp2a socat python
-    python3 -m pip install --user --upgrade pip
-    pip3 install syncedlyrics dbus-next --break-system-packages
+  if ! command -v brew &>/dev/null; then
+    echo "Homebrew not found. Please install: https://brew.sh/"
+    exit 1
+  fi
+  brew update
+  brew install mpv yt-dlp jq curl imagemagick figlet jp2a socat python
+  python3 -m pip install --user --upgrade pip
+  pip3 install syncedlyrics dbus-next --break-system-packages
 }
 
 install_scripts_linux() {
-    SOURCE_PATH="$(pwd)"
-    DEST_DIR="/usr/local/bin/tp-scripts"
-    WRAPPER_DEST="/usr/local/bin"
-    declare -A required_scripts=( ["play"]="play.sh" ["playlist"]="playlist.sh" )
-    declare -A optional_scripts=( ["playctl"]="playctl.sh" ["terminal-player-mpris"]="terminal_player_mpris.py" )
+  SOURCE_PATH="$(pwd)"
+  DEST_DIR="/usr/local/bin/tp-scripts"
+  WRAPPER_DEST="/usr/local/bin"
+  declare -A required_scripts=(["play"]="play.sh" ["playlist"]="playlist.sh")
+  declare -A optional_scripts=(["playctl"]="playctl.sh" ["terminal-player-mpris"]="terminal_player_mpris.py")
 
-    echo "Creating $DEST_DIR"
-    sudo install -d "$DEST_DIR"
+  echo "Creating $DEST_DIR"
+  sudo install -d "$DEST_DIR"
 
-    for cmd in "${!required_scripts[@]}"; do
-        SCRIPT="${SOURCE_PATH}/${required_scripts[$cmd]}"
-        DEST="${DEST_DIR}/${cmd}"
+  for cmd in "${!required_scripts[@]}"; do
+    SCRIPT="${SOURCE_PATH}/${required_scripts[$cmd]}"
+    DEST="${DEST_DIR}/${cmd}"
 
-        if [ ! -f "$SCRIPT" ]; then
-            echo "Error: ${required_scripts[$cmd]} not found in current directory"
-            exit 1
-        fi
-
-        echo "Installing ${required_scripts[$cmd]} to $DEST"
-        sudo install -m 755 "$SCRIPT" "$DEST"
-    done
-
-    for cmd in "${!optional_scripts[@]}"; do
-        SCRIPT="${SOURCE_PATH}/${optional_scripts[$cmd]}"
-        DEST="${DEST_DIR}/${cmd}"
-        if [ -f "$SCRIPT" ]; then
-            echo "Installing ${optional_scripts[$cmd]} to $DEST"
-            sudo install -m 755 "$SCRIPT" "$DEST"
-        else
-            echo "WARNING: Optional script missing: ${optional_scripts[$cmd]} (feature '${cmd}' will be unavailable)"
-        fi
-    done
-
-    if [ -f "${SOURCE_PATH}/tp" ]; then
-        echo "Installing tp wrapper to ${WRAPPER_DEST}/tp"
-        sudo install -m 755 "${SOURCE_PATH}/tp" "${WRAPPER_DEST}/tp"
-    else
-        echo "WARNING: tp wrapper missing (command 'tp' will be unavailable)"
+    if [ ! -f "$SCRIPT" ]; then
+      echo "Error: ${required_scripts[$cmd]} not found in current directory"
+      exit 1
     fi
 
-    echo "Installation complete! You can now run 'tp play' and 'tp playlist' from anywhere"
+    echo "Installing ${required_scripts[$cmd]} to $DEST"
+    sudo install -m 755 "$SCRIPT" "$DEST"
+  done
+
+  for cmd in "${!optional_scripts[@]}"; do
+    SCRIPT="${SOURCE_PATH}/${optional_scripts[$cmd]}"
+    DEST="${DEST_DIR}/${cmd}"
+    if [ -f "$SCRIPT" ]; then
+      echo "Installing ${optional_scripts[$cmd]} to $DEST"
+      sudo install -m 755 "$SCRIPT" "$DEST"
+    else
+      echo "WARNING: Optional script missing: ${optional_scripts[$cmd]} (feature '${cmd}' will be unavailable)"
+    fi
+  done
+
+  if [ -f "${SOURCE_PATH}/tp" ]; then
+    echo "Installing tp wrapper to ${WRAPPER_DEST}/tp"
+    sudo install -m 755 "${SOURCE_PATH}/tp" "${WRAPPER_DEST}/tp"
+  else
+    echo "WARNING: tp wrapper missing (command 'tp' will be unavailable)"
+  fi
+
+  echo "Installation complete! You can now run 'tp play' and 'tp playlist' from anywhere"
 }
 
-
 case "$OS" in
-    ubuntu|debian) install_deps_ubuntu_debian && install_scripts_linux ;;
-    arch|manjaro|blackarch) install_deps_arch && install_scripts_linux ;;
-    fedora) install_deps_fedora && install_scripts_linux ;;
-    Darwin) install_deps_macos && install_scripts_linux ;;
-    *) echo "OS not recognized. Only Linux/macOS/Windows supported." ; exit 1 ;;
+ubuntu | debian) install_deps_ubuntu_debian && install_scripts_linux ;;
+unos | arch | manjaro | blackarch) install_deps_arch && install_scripts_linux ;;
+fedora) install_deps_fedora && install_scripts_linux ;;
+Darwin) install_deps_macos && install_scripts_linux ;;
+*)
+  echo "OS not recognized. Only Linux/macOS/Windows supported."
+  exit 1
+  ;;
 esac
