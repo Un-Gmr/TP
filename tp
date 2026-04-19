@@ -10,4 +10,4 @@ fi
 
 cmd="$1"
 shift
-exec /usr/local/bin/tp-scripts/"$cmd" "$@"
+exec /usr/bin/tp-scripts/"$cmd" "$@"
