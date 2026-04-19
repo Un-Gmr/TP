@@ -1,10 +1,10 @@
 pkgname=tp
-pkgver=1.5
+pkgver=1.6
 pkgrel=1
-pkgdesc=""
+pkgdesc="Terminal music player using mpv"
 arch=('any')
-url=""
-license=('NONE')
+url="https://github.com/Un-Gmr/TP"
+license=('custom')
 
 depends=(
   mpv
@@ -34,10 +34,9 @@ prepare() {
 }
 
 package() {
-  install -Dm755 "$srcdir/play.sh" "$pkgdir/usr/local/bin/tp-scripts/play"
-  install -Dm755 "$srcdir/playlist.sh" "$pkgdir/usr/local/bin/tp-scripts/playlist"
-
-  [ -f "$srcdir/playctl.sh" ] && install -Dm755 "$srcdir/playctl.sh" "$pkgdir/usr/local/bin/tp-scripts/playctl" || echo "WARNING: playctl.sh missing"
-  [ -f "$srcdir/terminal_player_mpris.py" ] && install -Dm755 "$srcdir/terminal_player_mpris.py" "$pkgdir/usr/local/bin/tp-scripts/terminal-player-mpris" || echo "WARNING: terminal_player_mpris.py missing"
-  [ -f "$srcdir/tp" ] && install -Dm755 "$srcdir/tp" "$pkgdir/usr/local/bin/tp" || echo "WARNING: tp wrapper missing"
+  install -Dm755 "$srcdir/play.sh" "$pkgdir/usr/bin/tp-scripts/play"
+  install -Dm755 "$srcdir/playlist.sh" "$pkgdir/usr/bin/tp-scripts/playlist"
+  install -Dm755 "$srcdir/playctl.sh" "$pkgdir/usr/bin/tp-scripts/playctl"
+  install -Dm755 "$srcdir/terminal_player_mpris.py" "$pkgdir/usr/bin/tp-scripts/terminal-player-mpris"
+  install -Dm755 "$srcdir/tp" "$pkgdir/usr/bin/tp"
 }

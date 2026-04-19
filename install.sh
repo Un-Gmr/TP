@@ -39,8 +39,8 @@ install_deps_macos() {
 
 install_scripts_linux() {
   SOURCE_PATH="$(pwd)"
-  DEST_DIR="/usr/local/bin/tp-scripts"
-  WRAPPER_DEST="/usr/local/bin"
+  DEST_DIR="/usr/bin/tp-scripts"
+  WRAPPER_DEST="/usr/bin"
   declare -A required_scripts=(["play"]="play.sh" ["playlist"]="playlist.sh")
   declare -A optional_scripts=(["playctl"]="playctl.sh" ["terminal-player-mpris"]="terminal_player_mpris.py")
 
