@@ -2,7 +2,7 @@
 
 LOOP=false
 SEARCH=""
-LYRIC_OFFSET=0.0
+LYRIC_OFFSET=2.0
 DOWNLOAD=false
 SHOW_LYRICS=true
 FILEMODE=false
@@ -141,6 +141,23 @@ if [ "$FILEMODE" = true ]; then
     METADATA_FILE=""
     EXTRADATA_FILE=""
   fi
+
+  if [ -f "$URL" ] && command -v ffprobe >/dev/null 2>&1; then
+    TAGS=$(ffprobe -v quiet -print_format json -show_format "$URL" 2>/dev/null)
+    [ -z "$TITLE" ] && TITLE=$(echo "$TAGS" | jq -r '.format.tags.title // empty' || echo "$TITLE")
+    ARTIST=$(echo "$TAGS" | jq -r '.format.tags.artist // empty' || echo "$ARTIST")
+    ALBUM=$(echo "$TAGS" | jq -r '.format.tags.album // empty' || echo "$ALBUM")
+  fi
+
+  RUNTIME_METADATA_FILE="$RUNTIME_DIR/metadata.json"
+  [ -n "$URL" ] && jq -n \
+    --arg title "$TITLE" \
+    --arg artist "$ARTIST" \
+    --arg album "$ALBUM" \
+    --arg url "$URL" \
+    --arg track_id "$(date +%s)-$$" \
+    '{title:$title,artist:$artist,album:$album,url:$url,track_id:$track_id}' \
+    >"$RUNTIME_METADATA_FILE"
 fi
 
 mkdir -p "$RUNTIME_DIR"
