@@ -72,7 +72,7 @@ if [ "$DOWNLOAD" = true ]; then
 
   if [ "$SHOW_LYRICS" = true ]; then
     PYTHON=$(command -v python3 || command -v python)
-    [ -n "$PYTHON" ] && "$PYTHON" -m syncedlyrics --synced-only -o="$OUTDIR/lyrics.lrc" "$SEARCH" >/dev/null 2>&1
+    [ -n "$PYTHON" ] && "$PYTHON" -m syncedlyrics --synced-only -o="$OUTDIR/lyrics.lrc" "$(echo "$METADATA" | jq -r '.title') - $(echo "$METADATA" | jq -r '.artist')" >/dev/null 2>&1
   fi
 
   jq -n \
@@ -107,7 +107,7 @@ if [ "$FILEMODE" = false ]; then
   LYRICS="$RUNTIME_DIR/lyrics.lrc"
   if [ "$SHOW_LYRICS" = true ]; then
     PYTHON=$(command -v python3 || command -v python)
-    [ -n "$PYTHON" ] && "$PYTHON" -m syncedlyrics --synced-only -o="$LYRICS" "$SEARCH" >/dev/null 2>&1
+    [ -n "$PYTHON" ] && "$PYTHON" -m syncedlyrics --synced-only -o="$LYRICS" "$(echo "$METADATA" | jq -r '.title') - $(echo "$METADATA" | jq -r '.artist')" >/dev/null 2>&1
   fi
 
   jq -n \
