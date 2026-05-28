@@ -175,6 +175,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+for pid in $(pgrep -f "terminal-player-mpris" 2>/dev/null); do
+  [ "$pid" != "$$" ] && kill "$pid" 2>/dev/null && sleep 0.2
+done
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MPRIS_BRIDGE_MODE=""
 MPRIS_BRIDGE_PATH="${MPRIS_BRIDGE:-}"
@@ -240,6 +244,7 @@ fi
 
 TERM_WIDTH=$(tput cols)
 COVER_WIDTH=$((TERM_WIDTH / 2))
+INFO_WIDTH=$((TERM_WIDTH - COVER_WIDTH - 2))
 
 COVER_LINES=()
 if [ -n "$COVER" ] && [ -f "$COVER" ]; then
@@ -257,15 +262,53 @@ INFO_LINES=(
   "Volume:  100%"
 )
 
+INFO_LABELS=("Title:   " "Artist:  " "Album:   " "Date:    " "Channel: " "URL:     " "Percent: " "Volume:  ")
+INFO_VALUES=("$TITLE" "$ARTIST" "$ALBUM" "$DATE" "$UPLOADER" "$URL" "00:00:00 / 00:00:00 (0%)" "100%")
+SCROLL_TICK=0
+RENDER_EVERY=5
+
+redraw_info_line() {
+  local i=$1
+  local scroll_off=$2
+  local label="${INFO_LABELS[$i]}"
+  local value="${INFO_VALUES[$i]}"
+  local label_len=${#label}
+  local value_w=$((INFO_WIDTH - label_len))
+  [ $value_w -le 0 ] && value_w=1
+  tput cup $i $((COVER_WIDTH + 2))
+  printf "%s" "$label"
+  local display_text
+  if [ ${#value} -le $value_w ]; then
+    display_text="$value"
+  else
+    local max_off=$(( ${#value} - value_w ))
+    local pos=$((scroll_off % (max_off + 1)))
+    display_text="${value:$pos:$value_w}"
+  fi
+  if [ "$label" = "URL:     " ] && [ -n "$value" ]; then
+    printf '\e]8;;%s\e\\' "$value"
+    printf "%-${value_w}s" "$display_text"
+    printf '\e]8;;\e\\'
+  else
+    printf "%-${value_w}s" "$display_text"
+  fi
+  tput el
+}
+
+redraw_info_lines() {
+  local scroll_off=$1
+  for ((i = 0; i < ${#INFO_LABELS[@]}; i++)); do
+    redraw_info_line $i $scroll_off
+  done
+}
+
 clear
 max_lines=${#COVER_LINES[@]}
-[ ${#INFO_LINES[@]} -gt $max_lines ] && max_lines=${#INFO_LINES[@]}
-for ((i = 0; i < max_lines; i++)); do
-  printf "%-${COVER_WIDTH}s  %s\n" "${COVER_LINES[i]}" "${INFO_LINES[i]}"
+[ ${#INFO_LABELS[@]} -gt $max_lines ] && max_lines=${#INFO_LABELS[@]}
+for ((i = 0; i < ${#COVER_LINES[@]}; i++)); do
+  printf "%-${COVER_WIDTH}s\n" "${COVER_LINES[i]}"
 done
-
-PERCENT_LINE=$((${#INFO_LINES[@]} - 2))
-VOLUME_LINE=$((PERCENT_LINE + 1))
+redraw_info_lines $SCROLL_TICK
 LYRICS_FILE=$(mktemp)
 [ "$SHOW_LYRICS" = true ] && [ -f "$LYRICS" ] && cp "$LYRICS" "$LYRICS_FILE"
 
@@ -278,8 +321,8 @@ VOLUME_REFRESH_EVERY=50
 
 update_percent() {
   local percent="$1"
-  tput cup $PERCENT_LINE $COVER_WIDTH
-  printf "  Percent: %s  " "$percent"
+  INFO_VALUES[6]="$percent"
+  redraw_info_line 6 $SCROLL_TICK
   tput cup $((max_lines + 2)) 0
 }
 
@@ -287,8 +330,8 @@ update_volume() {
   [ ! -S "$MPV_SOCKET" ] && return
   vol=$(echo '{ "command": ["get_property", "volume"] }' | socat - "$MPV_SOCKET" 2>/dev/null | jq -r '.data // "N/A"')
   vol=${vol%.*}
-  tput cup $VOLUME_LINE $COVER_WIDTH
-  printf "  Volume:  %s%%  " "$vol"
+  INFO_VALUES[7]="${vol}%"
+  redraw_info_line 7 $SCROLL_TICK
   tput cup $((max_lines + 2)) 0
 }
 
@@ -358,6 +401,10 @@ parse_elapsed() {
 
 while read -r line; do
   ((LOOP_TICK++))
+  ((LOOP_TICK % RENDER_EVERY == 0)) && {
+    SCROLL_TICK=$((SCROLL_TICK + 1))
+    redraw_info_lines $SCROLL_TICK
+  }
   if [[ "$line" =~ ^A: ]]; then
     PERCENT=${line:3}
     [ -n "$PERCENT" ] && update_percent "$PERCENT"
