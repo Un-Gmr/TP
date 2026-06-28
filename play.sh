@@ -498,7 +498,7 @@ while read -r line; do
   fi
 
   key=""
-  tty -s 2>/dev/null && read -rsn1 -t 0.05 key </dev/tty 2>/dev/null
+  read -rsn1 -t 0.05 key </dev/tty 2>/dev/null || true
   case "$key" in
   s)
     diag "key=s exiting 10"

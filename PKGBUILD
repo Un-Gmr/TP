@@ -1,5 +1,5 @@
 pkgname=tp
-pkgver=2.0
+pkgver=2.1
 pkgrel=1
 pkgdesc="Terminal music player using mpv"
 arch=('any')
