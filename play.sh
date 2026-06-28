@@ -7,6 +7,14 @@ DOWNLOAD=false
 SHOW_LYRICS=true
 FILEMODE=false
 FILEPATH=""
+LYRICS=""
+COVER=""
+ARTIST=""
+ALBUM=""
+DATE=""
+UPLOADER=""
+THUMB=""
+DISPLAY_URL=""
 
 BASE_DIR="$HOME/songs"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/terminal-player"
@@ -55,6 +63,7 @@ if [ "$DOWNLOAD" = true ]; then
   OUTDIR="$DEFAULT_DIR"
   mkdir -p "$OUTDIR"
   METADATA=$(yt-dlp "ytsearch1:$SEARCH" -q --print-json --skip-download)
+  [ -z "$METADATA" ] && { echo "No results from yt-dlp" >&2; exit 1; }
   URL=$(echo "$METADATA" | jq -r '.webpage_url')
   TITLE=$(echo "$METADATA" | jq -r '.title')
   ARTIST=$(echo "$METADATA" | jq -r '.artist // .uploader // "N/A"')
@@ -93,8 +102,10 @@ fi
 
 if [ "$FILEMODE" = false ]; then
   METADATA=$(yt-dlp "ytsearch1:$SEARCH" -q --print-json --skip-download)
-  URL=$(echo "$METADATA" | jq -r '.webpage_url')
-  TITLE=$(echo "$METADATA" | jq -r '.title')
+  [ -z "$METADATA" ] && { echo "No results from yt-dlp" >&2; exit 1; }
+  URL=$(echo "$METADATA" | jq -r '.webpage_url // empty')
+  [ -z "$URL" ] && { echo "Failed to extract URL from yt-dlp output" >&2; exit 1; }
+  TITLE=$(echo "$METADATA" | jq -r '.title // "N/A"')
   ARTIST=$(echo "$METADATA" | jq -r '.artist // .uploader // "N/A"')
   ALBUM=$(echo "$METADATA" | jq -r '.album // "N/A"')
   DATE=$(echo "$METADATA" | jq -r '.upload_date // "N/A"')
@@ -166,12 +177,26 @@ rm -f "$MPV_SOCKET" "$CMD_FILE" "$REASON_FILE" "$MPRIS_STOP_FILE"
 : >"$REASON_FILE"
 : >"$MPRIS_LOG_FILE"
 
+DIAG_FILE="$RUNTIME_DIR/diag.log"
+
+diag() { printf "[%s] %s\n" "$(date +%H:%M:%S.%3N)" "$*" >>"$DIAG_FILE" 2>/dev/null || true; }
+
 cleanup() {
+  local ec=$?
+  diag "cleanup: exit_code=$ec REASON_FILE=$(cat "$REASON_FILE" 2>/dev/null)"
+  diag "cleanup: CMD_FILE=$(cat "$CMD_FILE" 2>/dev/null)"
   if [ -n "${MPRIS_PID:-}" ]; then
+    diag "cleanup: stopping MPRIS_PID=$MPRIS_PID"
     : >"$MPRIS_STOP_FILE"
     kill "$MPRIS_PID" 2>/dev/null || true
     wait "$MPRIS_PID" 2>/dev/null || true
   fi
+  local p
+  for p in $(pgrep -P $$ 2>/dev/null); do
+    kill "$p" 2>/dev/null || true
+  done
+  rm -f "$LYRICS_FILE"
+  diag "cleanup: done"
 }
 trap cleanup EXIT INT TERM
 
@@ -232,8 +257,10 @@ if [ -f "$METADATA_FILE" ]; then
   ALBUM=$(jq -r '.album // empty' "$METADATA_FILE")
   DATE=$(jq -r '.date // empty' "$METADATA_FILE")
   UPLOADER=$(jq -r '.channel // empty' "$METADATA_FILE")
-  URL=$(jq -r '.url // "'"$URL"'"' "$METADATA_FILE")
+  DISPLAY_URL=$(jq -r '.url // empty' "$METADATA_FILE")
+  [ ! -f "$URL" ] && URL="${DISPLAY_URL:-$URL}"
 fi
+: "${DISPLAY_URL:=$URL}"
 
 if [ -f "$EXTRADATA_FILE" ]; then
   [ -z "$ARTIST" ] && ARTIST=$(jq -r '.artist // empty' "$EXTRADATA_FILE")
@@ -257,13 +284,13 @@ INFO_LINES=(
   "Album:   $ALBUM"
   "Date:    $DATE"
   "Channel: $UPLOADER"
-  "URL:     $URL"
+  "URL:     $DISPLAY_URL"
   "Percent: 00:00:00 / 00:00:00 (0%)"
   "Volume:  100%"
 )
 
 INFO_LABELS=("Title:   " "Artist:  " "Album:   " "Date:    " "Channel: " "URL:     " "Percent: " "Volume:  ")
-INFO_VALUES=("$TITLE" "$ARTIST" "$ALBUM" "$DATE" "$UPLOADER" "$URL" "00:00:00 / 00:00:00 (0%)" "100%")
+INFO_VALUES=("$TITLE" "$ARTIST" "$ALBUM" "$DATE" "$UPLOADER" "$DISPLAY_URL" "00:00:00 / 00:00:00 (0%)" "100%")
 SCROLL_TICK=0
 RENDER_EVERY=5
 
@@ -281,7 +308,7 @@ redraw_info_line() {
   if [ ${#value} -le $value_w ]; then
     display_text="$value"
   else
-    local max_off=$(( ${#value} - value_w ))
+    local max_off=$((${#value} - value_w))
     local pos=$((scroll_off % (max_off + 1)))
     display_text="${value:$pos:$value_w}"
   fi
@@ -329,6 +356,8 @@ update_percent() {
 update_volume() {
   [ ! -S "$MPV_SOCKET" ] && return
   vol=$(echo '{ "command": ["get_property", "volume"] }' | socat - "$MPV_SOCKET" 2>/dev/null | jq -r '.data // "N/A"')
+  [ -z "$vol" ] && return
+  [ "$vol" = "N/A" ] && return
   vol=${vol%.*}
   INFO_VALUES[7]="${vol}%"
   redraw_info_line 7 $SCROLL_TICK
@@ -375,11 +404,14 @@ queue_reason() { printf "%s" "$1" >"$REASON_FILE"; }
 set_command() { printf "%s" "$1" >"$CMD_FILE"; }
 read_command() {
   [ -s "$CMD_FILE" ] || return 1
-  tr -d '\r\n' <"$CMD_FILE"
+  local cmd
+  cmd=$(tr -d '\r\n' <"$CMD_FILE")
+  diag "read_command: found '$cmd'"
   : >"$CMD_FILE"
+  printf "%s" "$cmd"
 }
 
-MPV_ARGS="--no-video --no-cache --input-ipc-server=$MPV_SOCKET"
+MPV_ARGS="--no-video --keep-open=no --input-ipc-server=$MPV_SOCKET"
 $LOOP && MPV_ARGS="$MPV_ARGS --loop"
 
 parse_elapsed() {
@@ -399,6 +431,12 @@ parse_elapsed() {
   echo $((10#$h * 3600 + 10#$m * 60 + 10#$s))
 }
 
+[ -z "$URL" ] && { echo "Error: no URL to play" >&2; exit 1; }
+diag "--- starting playback ---"
+diag "URL=$URL"
+diag "CMD_FILE_before_clear=$(cat "$CMD_FILE" 2>/dev/null || echo '(empty)')"
+: >"$CMD_FILE"
+diag "CMD_FILE_cleared"
 while read -r line; do
   ((LOOP_TICK++))
   ((LOOP_TICK % RENDER_EVERY == 0)) && {
@@ -417,21 +455,25 @@ while read -r line; do
   if cmd=$(read_command); then
     case "$cmd" in
     stop)
+      diag "cmd=stop exiting 10"
       queue_reason "stop"
       send_mpv_command '{ "command": ["stop"] }'
       exit 10
       ;;
     next)
+      diag "cmd=next exiting 11"
       queue_reason "next"
       send_mpv_command '{ "command": ["stop"] }'
       exit 11
       ;;
     prev)
+      diag "cmd=prev exiting 12"
       queue_reason "prev"
       send_mpv_command '{ "command": ["stop"] }'
       exit 12
       ;;
     quit)
+      diag "cmd=quit exiting 13"
       queue_reason "quit"
       send_mpv_command '{ "command": ["stop"] }'
       exit 13
@@ -455,21 +497,26 @@ while read -r line; do
     esac
   fi
 
-  read -rsn1 -t 0.05 key </dev/tty 2>/dev/null
+  key=""
+  tty -s 2>/dev/null && read -rsn1 -t 0.05 key </dev/tty 2>/dev/null
   case "$key" in
   s)
+    diag "key=s exiting 10"
     send_mpv_command '{ "command": ["stop"] }'
     exit 10
     ;;
   n)
+    diag "key=n exiting 11"
     send_mpv_command '{ "command": ["stop"] }'
     exit 11
     ;;
   p)
+    diag "key=p exiting 12"
     send_mpv_command '{ "command": ["stop"] }'
     exit 12
     ;;
   q)
+    diag "key=q exiting 13"
     send_mpv_command '{ "command": ["stop"] }'
     exit 13
     ;;
@@ -497,3 +544,4 @@ while read -r line; do
   esac
 
 done < <(mpv $MPV_ARGS --force-media-title="$TITLE" "$URL" 2>&1)
+diag "while_loop_ended_naturally"
