@@ -15,6 +15,8 @@ DATE=""
 UPLOADER=""
 THUMB=""
 DISPLAY_URL=""
+KITTY_MODE=false
+BIG_LYRICS=false
 
 BASE_DIR="$HOME/songs"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/terminal-player"
@@ -44,6 +46,8 @@ while [[ $# -gt 0 ]]; do
     shift
     ;;
   -L) LOOP=true ;;
+  -k|--kitty) KITTY_MODE=true ;;
+  -t|--big-lyrics) BIG_LYRICS=true ;;
   *) SEARCH="$SEARCH $1" ;;
   esac
   shift
@@ -195,6 +199,7 @@ cleanup() {
   for p in $(pgrep -P $$ 2>/dev/null); do
     kill "$p" 2>/dev/null || true
   done
+  kitty_cleanup
   rm -f "$LYRICS_FILE"
   diag "cleanup: done"
 }
@@ -273,8 +278,76 @@ TERM_WIDTH=$(tput cols)
 COVER_WIDTH=$((TERM_WIDTH / 2))
 INFO_WIDTH=$((TERM_WIDTH - COVER_WIDTH - 2))
 
+kitty_display_image() {
+  local img="$1"
+  local cell_w="$2"
+  [ ! -f "$img" ] && return
+
+  local img_w img_h
+  read img_w img_h < <(magick identify -format "%w %h" "$img" 2>/dev/null)
+  [ -z "$img_w" ] && return
+
+  local cell_px=${KITTY_CELL_PX:-9}
+  local cell_h_px=${KITTY_CELL_HPX:-18}
+  local target_px=$((cell_w * cell_px))
+  local disp_w=$target_px
+  local disp_h=$((disp_w * img_h / img_w))
+  local img_rows=$(( (disp_h + cell_h_px - 1) / cell_h_px ))
+
+  local b64
+  b64=$(magick "$img" -resize "${disp_w}x${disp_h}" PNG:- 2>/dev/null | base64 | tr -d '\n\r')
+  [ -z "$b64" ] && return 1
+
+  local total=${#b64}
+  if [ $total -le 240000 ]; then
+    printf '\e_Ga=T,f=100,w=%d,h=%d,c=0,r=0;%s\e\\' "$disp_w" "$disp_h" "$b64" >/dev/tty
+  else
+    local chunk_size=4000 pos=0 first=true
+    while [ $pos -lt $total ]; do
+      local chunk="${b64:$pos:$chunk_size}"
+      pos=$((pos + chunk_size))
+      local more=0; [ $pos -lt $total ] && more=1
+      if [ "$first" = true ]; then
+        printf '\e_Ga=T,f=100,w=%d,h=%d,c=0,r=0,m=%d;%s\e\\' "$disp_w" "$disp_h" "$more" "$chunk" >/dev/tty
+        first=false
+      else
+        printf '\e_Gm=%d;%s\e\\' "$more" "$chunk" >/dev/tty
+      fi
+    done
+  fi
+
+  echo "$img_rows"
+}
+
+kitty_render_text() {
+  local text="$1"
+  local row="$2"
+  [ -z "$text" ] && return
+  tput cup $row 0
+  printf '\x1b]66;s=3;%s\x1b\\\n\n' "$text" >/dev/tty
+}
+
+kitty_cleanup() {
+  printf '\e_Ga=d,d=I\e\\' >/dev/tty 2>/dev/null || true
+}
+
 COVER_LINES=()
-if [ -n "$COVER" ] && [ -f "$COVER" ]; then
+NEED_KITTY_IMAGE=false
+if [ "$KITTY_MODE" = true ] && [ -n "$COVER" ] && [ -f "$COVER" ]; then
+  NEED_KITTY_IMAGE=true
+  read img_w img_h < <(magick identify -format "%w %h" "$COVER" 2>/dev/null)
+  if [ -n "$img_w" ]; then
+    cell_px=${KITTY_CELL_PX:-9}
+    cell_h_px=${KITTY_CELL_HPX:-18}
+    target_px=$((COVER_WIDTH * cell_px))
+    disp_w=$target_px
+    disp_h=$((disp_w * img_h / img_w))
+    img_rows=$(( (disp_h + cell_h_px - 1) / cell_h_px ))
+    for ((i = 0; i < img_rows; i++)); do
+      COVER_LINES+=("")
+    done
+  fi
+elif [ -n "$COVER" ] && [ -f "$COVER" ]; then
   mapfile -t COVER_LINES < <(jp2a --colors --fill --width=$COVER_WIDTH "$COVER")
 fi
 
@@ -330,6 +403,9 @@ redraw_info_lines() {
 }
 
 clear
+if [ "$NEED_KITTY_IMAGE" = true ]; then
+  kitty_display_image "$COVER" "$COVER_WIDTH" >/dev/null
+fi
 max_lines=${#COVER_LINES[@]}
 [ ${#INFO_LABELS[@]} -gt $max_lines ] && max_lines=${#INFO_LABELS[@]}
 for ((i = 0; i < ${#COVER_LINES[@]}; i++)); do
@@ -390,9 +466,13 @@ show_lyrics() {
     tput el
   done
 
-  tput cup $LYRIC_START 0
   if [ -n "$last" ]; then
-    figlet -f small -w $TERM_WIDTH "$last"
+    if [ "$BIG_LYRICS" = true ]; then
+      kitty_render_text "$last" $LYRIC_START
+    else
+      tput cup $LYRIC_START 0
+      figlet -f small -w $TERM_WIDTH "$last"
+    fi
   fi
 }
 
