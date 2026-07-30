@@ -1,6 +1,6 @@
 pkgname=tp
 pkgver=2.2
-pkgrel=1
+pkgrel=2
 pkgdesc="Terminal music player using mpv"
 arch=('any')
 url="https://github.com/Un-Gmr/TP"
