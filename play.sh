@@ -278,6 +278,27 @@ TERM_WIDTH=$(tput cols)
 COVER_WIDTH=$((TERM_WIDTH / 2))
 INFO_WIDTH=$((TERM_WIDTH - COVER_WIDTH - 2))
 
+get_cell_size() {
+  local cols rows
+  cols=$(tput cols 2>/dev/null || echo 80)
+  rows=$(tput lines 2>/dev/null || echo 24)
+
+  read -rst 0.01 -n 10000 discard </dev/tty 2>/dev/null || true
+
+  printf '\e[14t' >/dev/tty 2>/dev/null || true
+
+  local _ h w
+  IFS=';' read -rst 0.1 -d 't' _ h w </dev/tty 2>/dev/null || true
+
+  if [ -n "$h" ] && [ -n "$w" ] && [ "$w" -gt 0 ] && [ "$cols" -gt 0 ]; then
+    KITTY_CELL_PX=$((w / cols))
+    KITTY_CELL_HPX=$((h / rows))
+  else
+    KITTY_CELL_PX=9
+    KITTY_CELL_HPX=18
+  fi
+}
+
 kitty_display_image() {
   local img="$1"
   local cell_w="$2"
@@ -287,12 +308,10 @@ kitty_display_image() {
   read img_w img_h < <(magick identify -format "%w %h" "$img" 2>/dev/null)
   [ -z "$img_w" ] && return
 
-  local cell_px=${KITTY_CELL_PX:-9}
-  local cell_h_px=${KITTY_CELL_HPX:-18}
-  local target_px=$((cell_w * cell_px))
+  local target_px=$((cell_w * KITTY_CELL_PX))
   local disp_w=$target_px
   local disp_h=$((disp_w * img_h / img_w))
-  local img_rows=$(( (disp_h + cell_h_px - 1) / cell_h_px ))
+  local img_rows=$(( (disp_h + KITTY_CELL_HPX - 1) / KITTY_CELL_HPX ))
 
   local b64
   b64=$(magick "$img" -resize "${disp_w}x${disp_h}" PNG:- 2>/dev/null | base64 | tr -d '\n\r')
@@ -328,21 +347,20 @@ kitty_render_text() {
 }
 
 kitty_cleanup() {
-  printf '\e_Ga=d,d=I\e\\' >/dev/tty 2>/dev/null || true
+  printf '\e_Ga=d,d=a\e\\' >/dev/tty 2>/dev/null || true
 }
 
 COVER_LINES=()
 NEED_KITTY_IMAGE=false
-if [ "$KITTY_MODE" = true ] && [ -n "$COVER" ] && [ -f "$COVER" ]; then
-  NEED_KITTY_IMAGE=true
+[ "$KITTY_MODE" = true ] && get_cell_size
+[ "$KITTY_MODE" = true ] && [ -n "$COVER" ] && [ -f "$COVER" ] && NEED_KITTY_IMAGE=true
+if [ "$NEED_KITTY_IMAGE" = true ]; then
   read img_w img_h < <(magick identify -format "%w %h" "$COVER" 2>/dev/null)
   if [ -n "$img_w" ]; then
-    cell_px=${KITTY_CELL_PX:-9}
-    cell_h_px=${KITTY_CELL_HPX:-18}
-    target_px=$((COVER_WIDTH * cell_px))
+    target_px=$((COVER_WIDTH * KITTY_CELL_PX))
     disp_w=$target_px
     disp_h=$((disp_w * img_h / img_w))
-    img_rows=$(( (disp_h + cell_h_px - 1) / cell_h_px ))
+    img_rows=$(( (disp_h + KITTY_CELL_HPX - 1) / KITTY_CELL_HPX ))
     for ((i = 0; i < img_rows; i++)); do
       COVER_LINES+=("")
     done
@@ -405,12 +423,15 @@ redraw_info_lines() {
 clear
 if [ "$NEED_KITTY_IMAGE" = true ]; then
   kitty_display_image "$COVER" "$COVER_WIDTH" >/dev/null
+  tput cup ${#COVER_LINES[@]} 0
 fi
 max_lines=${#COVER_LINES[@]}
 [ ${#INFO_LABELS[@]} -gt $max_lines ] && max_lines=${#INFO_LABELS[@]}
-for ((i = 0; i < ${#COVER_LINES[@]}; i++)); do
-  printf "%-${COVER_WIDTH}s\n" "${COVER_LINES[i]}"
-done
+if [ "$NEED_KITTY_IMAGE" != true ]; then
+  for ((i = 0; i < ${#COVER_LINES[@]}; i++)); do
+    printf "%-${COVER_WIDTH}s\n" "${COVER_LINES[i]}"
+  done
+fi
 redraw_info_lines $SCROLL_TICK
 LYRICS_FILE=$(mktemp)
 [ "$SHOW_LYRICS" = true ] && [ -f "$LYRICS" ] && cp "$LYRICS" "$LYRICS_FILE"
