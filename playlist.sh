@@ -9,7 +9,7 @@ mkdir -p "$PLAYLIST_DIR" >>/dev/null
 filepath="$PLAYLIST_DIR/${filename}.txt"
 
 if [ $# -lt 1 ]; then
-  echo "Usage: playlist filename [-l] [-s] [-n] [-d]" >&2
+  echo "Usage: playlist filename [-l] [-s] [-n] [-d] [-t] [-k]" >&2
   echo "Playlist dir: ~/.local/share/play/playlists" >&2
   exit 1
 fi
@@ -20,12 +20,16 @@ shift
 loop=false
 shuffle=false
 download=false
+big_lyrics=false
+kitty=false
 
 for arg in "$@"; do
   case $arg in
   -l) loop=true ;;
   -s) shuffle=true ;;
   -d) download=true ;;
+  -t) big_lyrics=true ;;
+  -k) kitty=true ;;
   *)
     echo "Unknown option: $arg" >&2
     exit 1
@@ -58,15 +62,15 @@ play_playlist() {
     fi
 
     line="${lines[$idx]}"
+    local play_args=("$line")
     if $download; then
-      "$PLAY_BIN" "$line" -d
-    else
-      if $NOTIFY; then
-        "$PLAY_BIN" "$line"
-      else
-        "$PLAY_BIN" "$line" -n
-      fi
+      play_args+=(-d)
+    elif ! $NOTIFY; then
+      play_args+=(-n)
     fi
+    $big_lyrics && play_args+=(-t)
+    $kitty && play_args+=(-k)
+    "$PLAY_BIN" "${play_args[@]}"
 
     rc=$?
     case "$rc" in
